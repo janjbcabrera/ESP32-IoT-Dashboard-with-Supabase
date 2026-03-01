@@ -3,66 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro IoT Dashboard</title>
+    <title>IoT Pro Dashboard</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
-        body { background: #0f172a; color: white; font-family: sans-serif; }
-        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 1.5rem; }
+        body { background: #0f172a; color: white; font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; }
+        .stat-value { font-size: 3.5rem; font-weight: 800; letter-spacing: -2px; }
     </style>
 </head>
-<body class="p-4 md:p-10">
+<body class="p-6 md:p-12">
     <div class="max-w-4xl mx-auto">
-        <h1 class="text-3xl font-bold text-emerald-400 mb-2">Pro Monitor</h1>
-        <p class="text-slate-400 mb-8">ESP32 + Supabase Realtime</p>
+        <header class="mb-10">
+            <h1 class="text-4xl font-black text-emerald-400">Live Monitor</h1>
+            <p class="text-slate-400">Secure ESP32 Dashboard</p>
+        </header>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div class="glass p-8 text-center">
-                <span class="text-xs uppercase text-slate-400">Temperature</span>
-                <div id="temp" class="text-5xl font-bold my-2">--°C</div>
+            <div class="glass p-10 text-center">
+                <span class="text-xs uppercase tracking-widest text-slate-500 font-bold">Temperature</span>
+                <div id="temp" class="stat-value text-white my-2">--°C</div>
             </div>
-            <div class="glass p-8 text-center">
-                <span class="text-xs uppercase text-slate-400">Humidity</span>
-                <div id="humi" class="text-5xl font-bold my-2">--%</div>
+            <div class="glass p-10 text-center">
+                <span class="text-xs uppercase tracking-widest text-slate-500 font-bold">Humidity</span>
+                <div id="humi" class="stat-value text-white my-2">--%</div>
             </div>
         </div>
 
-        <div class="glass p-6 h-80 mb-8">
+        <div class="glass p-6 h-80 mb-10">
             <canvas id="mainChart"></canvas>
         </div>
     </div>
 
     <script>
-        // --- CONFIGURATION ---
-        const SB_URL = 'https://iqdfxyghfgvxuzodinqt.supabase.co';
-        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxZGZ4eWdoZmd2eHV6b2RpbnF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDcyMTYsImV4cCI6MjA4NzMyMzIxNn0.K9GY5KDLzN-dSU7a947vqG72DBgDmzXYz_MzbCxrJdU';
+        // --- 1. SETTINGS (PASTE YOUR KEYS HERE) ---
+        const URL = 'https://iqdfxyghfgvxuzodinqt.supabase.co';
+        const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxZGZ4eWdoZmd2eHV6b2RpbnF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDcyMTYsImV4cCI6MjA4NzMyMzIxNn0.K9GY5KDLzN-dSU7a947vqG72DBgDmzXYz_MzbCxrJdU';
 
-        let iotClient;
+        let client;
+        let chart;
 
-        // --- INITIALIZATION ---
-        function initSystem() {
-            // This checks if the library loaded as 'supabase' or 'lib'
-            const creator = window.supabase || window.lib;
-            
-            if (!creator) {
-                console.error("Critical Error: Supabase library failed to load from CDN.");
-                alert("Library Load Error. Check Internet Connection.");
+        // --- 2. INITIALIZE SYSTEM ---
+        function init() {
+            // FIX: This looks for 'supabase' which is what the CDN actually provides
+            if (typeof supabase !== 'undefined') {
+                client = supabase.createClient(URL, KEY);
+                console.log("Connected to Supabase successfully.");
+            } else {
+                console.error("Supabase library not found in global scope!");
+                alert("Library Error: Please check your internet connection.");
                 return;
             }
 
-            iotClient = creator.createClient(SB_URL, SB_KEY);
-            console.log("System: Supabase Client Initialized");
-
             setupChart();
             loadHistory();
-            startRealtime();
+            subscribe();
         }
 
-        // --- CHART LOGIC ---
-        let chart;
+        // --- 3. CHART SETUP ---
         function setupChart() {
             const ctx = document.getElementById('mainChart').getContext('2d');
             chart = new Chart(ctx, {
@@ -73,25 +74,35 @@
                         label: 'Temperature',
                         data: [],
                         borderColor: '#10b981',
+                        borderWidth: 3,
                         tension: 0.4,
+                        pointRadius: 0,
                         fill: true,
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)'
+                        backgroundColor: 'rgba(16, 185, 129, 0.05)'
                     }]
                 },
-                options: { maintainAspectRatio: false, scales: { y: { grid: { color: '#1e293b' } } } }
+                options: { 
+                    maintainAspectRatio: false, 
+                    plugins: { legend: { display: false } },
+                    scales: { 
+                        x: { display: false },
+                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } }
+                    }
+                }
             });
         }
 
-        // --- DATA LOGIC ---
+        // --- 4. DATA LOGIC ---
         async function loadHistory() {
-            const { data, error } = await iotClient
+            const { data, error } = await client
                 .from('sensor_data')
                 .select('*')
                 .order('created_at', { ascending: false })
-                .limit(10);
+                .limit(12);
 
-            if (data) {
-                data.reverse().forEach(row => {
+            if (data && data.length > 0) {
+                const recent = data.reverse();
+                recent.forEach(row => {
                     chart.data.labels.push(new Date(row.created_at).toLocaleTimeString());
                     chart.data.datasets[0].data.push(row.temperature);
                 });
@@ -101,26 +112,24 @@
             }
         }
 
-        function startRealtime() {
-            iotClient
-                .channel('iot-room')
+        function subscribe() {
+            client
+                .channel('room-1')
                 .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sensor_data' }, payload => {
-                    console.log("Live Update:", payload.new);
                     const { temperature, humidity } = payload.new;
-                    
                     document.getElementById('temp').innerText = temperature + "°C";
                     document.getElementById('humi').innerText = humidity + "%";
 
                     chart.data.labels.push(new Date().toLocaleTimeString());
                     chart.data.datasets[0].data.push(temperature);
-                    if(chart.data.labels.length > 10) chart.data.labels.shift();
+                    if(chart.data.labels.length > 12) chart.data.labels.shift();
                     chart.update();
                 })
                 .subscribe();
         }
 
-        // Run when window loads
-        window.onload = initSystem;
+        // Boot system when window is ready
+        window.onload = init;
     </script>
 </body>
 </html>
