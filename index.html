@@ -61,66 +61,95 @@
 
     <script>
 
-         // 1. Initialize Supabase ONCE
-        const supabaseUrl = 'https://iqdfxyghfgvxuzodinqt.supabase.co';
-        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxZGZ4eWdoZmd2eHV6b2RpbnF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDcyMTYsImV4cCI6MjA4NzMyMzIxNn0.K9GY5KDLzN-dSU7a947vqG72DBgDmzXYz_MzbCxrJdU';
-        const supabase = lib.createClient(supabaseUrl, supabaseKey);
+        
+      // 1. Initialize Supabase - ONLY ONCE
+const supabaseUrl = 'https://iqdfxyghfgvxuzodinqt.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxZGZ4eWdoZmd2eHV6b2RpbnF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDcyMTYsImV4cCI6MjA4NzMyMzIxNn0.K9GY5KDLzN-dSU7a947vqG72DBgDmzXYz_MzbCxrJdU';
+const sbClient = lib.createClient(supabaseUrl, supabaseKey); // Renamed to sbClient for clarity
 
-      
-
-
-// 2. Setup Chart
+// 2. Initialize Chart.js
 const ctx = document.getElementById('mainChart').getContext('2d');
 const chart = new Chart(ctx, {
     type: 'line',
     data: { 
         labels: [], 
-        datasets: [{ label: 'Temp', data: [], borderColor: '#10b981', tension: 0.4 }] 
+        datasets: [{ 
+            label: 'Temperature (°C)', 
+            data: [], 
+            borderColor: '#10b981', 
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            fill: true,
+            tension: 0.4 
+        }] 
     },
-    options: { maintainAspectRatio: false }
+    options: { 
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: false } }
+    }
 });
 
-// 3. Fetch History (So the chart isn't empty on refresh)
-async function fetchHistory() {
-    const { data, error } = await supabase
+// 3. Fetch History (Initial Load)
+async function loadInitialData() {
+    console.log("Fetching historical data...");
+    const { data, error } = await sbClient
         .from('sensor_data')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(15);
 
-    if (data) {
-        data.reverse().forEach(row => {
-            chart.data.labels.push(new Date(row.created_at).toLocaleTimeString());
+    if (error) {
+        console.error("Database Error:", error.message);
+        return;
+    }
+
+    if (data && data.length > 0) {
+        const sortedData = data.reverse();
+        sortedData.forEach(row => {
+            const timeLabel = new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            chart.data.labels.push(timeLabel);
             chart.data.datasets[0].data.push(row.temperature);
         });
         chart.update();
-        // Set latest values to UI
+        
+        // Update the big numbers on screen
         document.getElementById('temp').innerText = data[data.length-1].temperature + "°";
         document.getElementById('humi').innerText = data[data.length-1].humidity + "%";
     }
 }
 
-// 4. Realtime Listener
-supabase
-    .channel('any')
+// 4. Real-time Listener (Live Updates)
+sbClient
+    .channel('public-sensor-changes')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sensor_data' }, payload => {
-        console.log("New data received!", payload.new);
+        console.log("New data received live:", payload.new);
         const { temperature, humidity } = payload.new;
         
+        // Update UI Numbers
         document.getElementById('temp').innerText = temperature + "°";
         document.getElementById('humi').innerText = humidity + "%";
         
-        chart.data.labels.push(new Date().toLocaleTimeString());
+        // Update Chart
+        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        chart.data.labels.push(now);
         chart.data.datasets[0].data.push(temperature);
-        if(chart.data.labels.length > 10) chart.data.labels.shift();
+        
+        // Keep chart to last 15 points
+        if(chart.data.labels.length > 15) {
+            chart.data.labels.shift();
+            chart.data.datasets[0].data.shift();
+        }
         chart.update();
     })
     .subscribe();
 
-// Start the history fetch
-fetchHistory();
+// Run the history loader on page start
+loadInitialData();
+
+
     </script>
 </body>
 </html>
+
 
 
