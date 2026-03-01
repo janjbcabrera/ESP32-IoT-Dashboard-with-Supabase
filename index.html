@@ -60,42 +60,66 @@
     </div>
 
     <script>
+
+         // 1. Initialize Supabase ONCE
         const supabaseUrl = 'https://iqdfxyghfgvxuzodinqt.supabase.co';
         const supabaseKey = 'JhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxZGZ4eWdoZmd2eHV6b2RpbnF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDcyMTYsImV4cCI6MjA4NzMyMzIxNn0.K9GY5KDLzN-dSU7a947vqG72DBgDmzXYz_MzbCxrJdU';
         const supabase = lib.createClient(supabaseUrl, supabaseKey);
 
-        // Chart Initialization
-        const ctx = document.getElementById('mainChart').getContext('2d');
-        const chart = new Chart(ctx, {
-            type: 'line',
-            data: { labels: [], datasets: [{ label: 'Temp', data: [], borderColor: '#10b981', tension: 0.4 }] },
-            options: { maintainAspectRatio: false, scales: { y: { grid: { color: '#1e293b' } } } }
+      
+
+
+// 2. Setup Chart
+const ctx = document.getElementById('mainChart').getContext('2d');
+const chart = new Chart(ctx, {
+    type: 'line',
+    data: { 
+        labels: [], 
+        datasets: [{ label: 'Temp', data: [], borderColor: '#10b981', tension: 0.4 }] 
+    },
+    options: { maintainAspectRatio: false }
+});
+
+// 3. Fetch History (So the chart isn't empty on refresh)
+async function fetchHistory() {
+    const { data, error } = await supabase
+        .from('sensor_data')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+    if (data) {
+        data.reverse().forEach(row => {
+            chart.data.labels.push(new Date(row.created_at).toLocaleTimeString());
+            chart.data.datasets[0].data.push(row.temperature);
         });
+        chart.update();
+        // Set latest values to UI
+        document.getElementById('temp').innerText = data[data.length-1].temperature + "°";
+        document.getElementById('humi').innerText = data[data.length-1].humidity + "%";
+    }
+}
 
-        // Realtime Subscription
-        supabase.channel('room1').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sensor_data' }, payload => {
-            const { temperature, humidity } = payload.new;
-            document.getElementById('temp').innerText = temperature + "°";
-            document.getElementById('humi').innerText = humidity + "%";
-            
-            // Update Chart
-            chart.data.labels.push(new Date().toLocaleTimeString());
-            chart.data.datasets[0].data.push(temperature);
-            if(chart.data.labels.length > 10) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
-            chart.update();
-        }).subscribe();
+// 4. Realtime Listener
+supabase
+    .channel('any')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sensor_data' }, payload => {
+        console.log("New data received!", payload.new);
+        const { temperature, humidity } = payload.new;
+        
+        document.getElementById('temp').innerText = temperature + "°";
+        document.getElementById('humi').innerText = humidity + "%";
+        
+        chart.data.labels.push(new Date().toLocaleTimeString());
+        chart.data.datasets[0].data.push(temperature);
+        if(chart.data.labels.length > 10) chart.data.labels.shift();
+        chart.update();
+    })
+    .subscribe();
 
-        async function login() {
-            const { data, error } = await supabase.auth.signInWithPassword({
-                email: document.getElementById('email').value,
-                password: document.getElementById('pass').value
-            });
-            if(!error) {
-                document.getElementById('login-section').classList.add('hidden');
-                document.getElementById('admin-controls').classList.remove('hidden');
-                document.getElementById('auth-status').innerText = "Admin Session";
-            }
-        }
+// Start the history fetch
+fetchHistory();
     </script>
 </body>
 </html>
+
