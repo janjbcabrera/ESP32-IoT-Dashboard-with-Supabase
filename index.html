@@ -60,10 +60,11 @@
     </div>
 
     <script>
-        const supabaseUrl = 'https://iqdfxyghfgvxuzodinqt.supabase.co';
-        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxZGZ4eWdoZmd2eHV6b2RpbnF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDcyMTYsImV4cCI6MjA4NzMyMzIxNn0.K9GY5KDLzN-dSU7a947vqG72DBgDmzXYz_MzbCxrJdU';
-        const supabase = lib.createClient(supabaseUrl, supabaseKey);
-
+          
+    // WE RENAMED THE VARIABLE TO 'iotClient' TO PREVENT THE DUPLICATE ERROR
+    const supabaseUrl = 'https://iqdfxyghfgvxuzodinqt.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxZGZ4eWdoZmd2eHV6b2RpbnF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDcyMTYsImV4cCI6MjA4NzMyMzIxNn0.K9GY5KDLzN-dSU7a947vqG72DBgDmzXYz_MzbCxrJdU';
+    
     // Check if the library is loaded before creating the client
     if (typeof lib === 'undefined') {
         console.error("Supabase library (lib) not found! Check your CDN link.");
