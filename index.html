@@ -3,110 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 Secure Monitor</title>
+    <title>IoT Pro Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    </head>
-<body>
-
-<div class="container">
-    <div id="status-bar"><span class="status" id="dot"></span> <span id="stat-text">System Live</span></div>
-    <h1>Smart Monitor</h1>
-
-    <div class="stats-grid">
-        <div class="card" id="temp-card">
-            <h3>Temperature</h3>
-            <h2 id="temp">--°</h2>
-        </div>
-        <div class="card">
-            <h3>Humidity</h3>
-            <h2 id="humi">--%</h2>
-        </div>
-    </div>
-
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background: #0f172a; color: white; }
+        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+    </style>
+</head>
+<body class="p-6">
+    <div class="max-w-4xl mx-auto">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-emerald-400">Pro Monitor</h1>
+                <p class="text-slate-400">Real-time Environmental Data</p>
+            </div>
+            <div id="auth-status" class="text-xs uppercase tracking-widest bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/50">
+                Public View
+            </div>
+        </div>
 
-<div class="card" style="width: 100%; height: 300px; margin-bottom: 25px;">
-    <h3>24-Hour Trend</h3>
-    <canvas id="tempChart"></canvas>
-</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="glass p-8 rounded-3xl text-center">
+                <span class="text-slate-400 uppercase text-xs">Temperature</span>
+                <div class="text-6xl font-black my-2" id="temp">--°</div>
+                <div id="temp-status" class="text-sm text-emerald-400">Normal</div>
+            </div>
+            <div class="glass p-8 rounded-3xl text-center">
+                <span class="text-slate-400 uppercase text-xs">Humidity</span>
+                <div class="text-6xl font-black my-2" id="humi">--%</div>
+                <div class="text-sm text-sky-400">Stable</div>
+            </div>
+        </div>
 
-    <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;">
+        <div class="glass p-6 rounded-3xl mb-8 h-80">
+            <canvas id="mainChart"></canvas>
+        </div>
 
-    <div id="login-form" class="settings-panel">
-        <h3>Admin Login</h3>
-        <input type="email" id="email" placeholder="Email" style="width: 90%; margin-bottom: 10px;"><br>
-        <input type="password" id="password" placeholder="Password" style="width: 90%;"><br>
-        <button onclick="login()">Sign In to Edit</button>
+        <div id="login-section" class="glass p-6 rounded-3xl text-center">
+            <h3 class="mb-4 font-semibold">Administrator Access</h3>
+            <input id="email" type="email" placeholder="Email" class="bg-slate-800 border-none rounded-lg p-2 mr-2">
+            <input id="pass" type="password" placeholder="Password" class="bg-slate-800 border-none rounded-lg p-2 mr-2">
+            <button onclick="login()" class="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-lg transition">Login</button>
+        </div>
+
+        <div id="admin-controls" class="glass p-6 rounded-3xl hidden">
+            <h3 class="text-emerald-400 font-bold mb-4">System Settings</h3>
+            <div class="flex items-center gap-4">
+                <label>Alarm Threshold (°C):</label>
+                <input id="threshold" type="number" class="bg-slate-800 rounded p-2 w-20" value="30">
+                <button onclick="updateSettings()" class="bg-emerald-500 px-4 py-2 rounded-lg">Save</button>
+                <button onclick="logout()" class="text-slate-500 text-sm underline">Logout</button>
+            </div>
+        </div>
     </div>
 
-    <div id="admin-panel" class="settings-panel" style="display: none;">
-        <h3>Control Panel</h3>
-        <label>Alert Threshold (°C)</label><br><br>
-        <input type="number" id="thresholdInput" value="30">
-        <button onclick="updateThreshold()">Update System</button>
-        <button onclick="logout()" style="background: transparent; color: #666; font-size: 0.8rem; margin-top: 10px;">Logout</button>
-    </div>
-</div>
+    <script>
+        const supabaseUrl = 'YOUR_URL';
+        const supabaseKey = 'YOUR_KEY';
+        const supabase = lib.createClient(supabaseUrl, supabaseKey);
 
-<script>
-    const supabaseUrl = 'https://your-project.supabase.co';
-    const supabaseKey = 'YOUR_ANON_KEY';
-    const supabase = lib.createClient(supabaseUrl, supabaseKey);
+        // Chart Initialization
+        const ctx = document.getElementById('mainChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Temp', data: [], borderColor: '#10b981', tension: 0.4 }] },
+            options: { maintainAspectRatio: false, scales: { y: { grid: { color: '#1e293b' } } } }
+        });
 
-    // 1. REAL-TIME DATA FETCHING (Public)
-    supabase
-        .channel('schema-db-changes')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sensor_data' }, payload => {
-            const t = payload.new.temperature;
-            document.getElementById('temp').innerText = t + "°C";
-            document.getElementById('humi').innerText = payload.new.humidity + "%";
+        // Realtime Subscription
+        supabase.channel('room1').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sensor_data' }, payload => {
+            const { temperature, humidity } = payload.new;
+            document.getElementById('temp').innerText = temperature + "°";
+            document.getElementById('humi').innerText = humidity + "%";
             
-            // Visual Alarm Logic
-            const limit = document.getElementById('thresholdInput').value;
-            if(t > limit) {
-                document.getElementById('temp-card').style.background = "#ff4d4d";
-                document.getElementById('dot').classList.add('alarm-active');
-            } else {
-                document.getElementById('temp-card').style.background = "white";
-                document.getElementById('dot').classList.remove('alarm-active');
+            // Update Chart
+            chart.data.labels.push(new Date().toLocaleTimeString());
+            chart.data.datasets[0].data.push(temperature);
+            if(chart.data.labels.length > 10) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+            chart.update();
+        }).subscribe();
+
+        async function login() {
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email: document.getElementById('email').value,
+                password: document.getElementById('pass').value
+            });
+            if(!error) {
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('admin-controls').classList.remove('hidden');
+                document.getElementById('auth-status').innerText = "Admin Session";
             }
-        })
-        .subscribe();
-
-    // 2. AUTHENTICATION LOGIC
-    async function login() {
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
-        if (error) {
-            alert(error.message);
-        } else {
-            showAdmin();
         }
-    }
-
-    function showAdmin() {
-        document.getElementById('login-form').style.display = 'none';
-        document.getElementById('admin-panel').style.display = 'block';
-    }
-
-    async function logout() {
-        await supabase.auth.signOut();
-        location.reload();
-    }
-
-    // 3. SECURE UPDATE (Requires Auth Token)
-    async function updateThreshold() {
-        const val = document.getElementById('thresholdInput').value;
-        const { error } = await supabase
-            .from('settings')
-            .update({ temp_threshold: val })
-            .eq('id', 1);
-
-        if (error) alert("Error: " + error.message);
-        else alert("Threshold synchronized with ESP32!");
-    }
-</script>
+    </script>
 </body>
 </html>
